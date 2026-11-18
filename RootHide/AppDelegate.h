@@ -10,19 +10,19 @@ FOUNDATION_EXPORT NSString * const RHInjectSettingsChangedNotification;
 @property (class, nonatomic, readonly) NSString *rootHideInjectionMode;
 
 + (id)getDefaultsForKey:(NSString*)value;
-+ (void)setDefaults:(NSObject*)value forKey:(NSString*)key;
++ (BOOL)setDefaults:(NSObject*)value forKey:(NSString*)key;
 
 + (NSString *)rootHidePathForRelativePath:(NSString *)relativePath;
 + (NSMutableDictionary *)rootHideDictionaryForRelativePath:(NSString *)relativePath
                                              createIfNeeded:(BOOL)createIfNeeded
                                                    defaults:(NSDictionary *)defaults;
-+ (void)writeRootHideDictionary:(NSDictionary *)dictionary toRelativePath:(NSString *)relativePath;
-+ (void)setRootHideInjectionMode:(NSString *)mode;
++ (BOOL)writeRootHideDictionary:(NSDictionary *)dictionary toRelativePath:(NSString *)relativePath;
++ (BOOL)setRootHideInjectionMode:(NSString *)mode;
 + (NSString *)activeInjectionRulesRelativePath;
 + (NSDictionary *)defaultSystemInjection;
 + (NSDictionary *)defaultWantsBlacklist;
 + (NSDictionary *)defaultJetsamAddend;
-+ (void)ensureInjectionModeSupportFiles;
++ (BOOL)ensureSupportFilesForMode:(NSString *)mode;
 + (void)rebootUserspace;
 
 + (void)showAlert:(UIAlertController*)alert;

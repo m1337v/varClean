@@ -24,10 +24,11 @@ static NSString * const RHRootHideInjectWantsBlacklistRelativePath = @"/var/mobi
 static NSString * const RHRootHideJetsamAddendRelativePath = @"/var/mobile/Library/RootHide/pro.m1337.jetsam.addend.plist";
 static NSString * const RHRootHideUninjectRelativePath = @"/var/mobile/Library/RootHide/pro.m1337.uninject.plist";
 static NSString * const RHRootHideHiddenWhitelistTweaksRelativePath = @"/var/mobile/Library/RootHide/pro.m1337.hiddenwhitelist.tweaks.plist";
-static NSString * const RHInjectModeDefaultsKey = @"m1337.rhinject.injectionMode";
+
 
 static NSString *RootHideNormalizeInjectionMode(NSString *mode)
 {
+    if (![mode isKindOfClass:NSString.class]) return nil;
     if ([mode isEqualToString:@"stock"] || [mode isEqualToString:@"blacklist"] || [mode isEqualToString:@"whitelist"] || [mode isEqualToString:@"hiddenwhitelist"] || [mode isEqualToString:@"blacklistallowlist"]) {
         return mode;
     }
@@ -37,6 +38,10 @@ static NSString *RootHideNormalizeInjectionMode(NSString *mode)
 static NSArray<NSString *> *RootHideCandidatePaths(NSString *relativePath)
 {
     NSMutableOrderedSet<NSString *> *paths = [NSMutableOrderedSet orderedSet];
+    if ([relativePath hasPrefix:[RHRootHideDirectoryRelativePath stringByAppendingString:@"/"]]) {
+        NSString *resolved = jbroot(relativePath);
+        return resolved.length ? @[resolved] : @[];
+    }
     if (relativePath.length > 0) {
         [paths addObject:relativePath];
     }
@@ -47,30 +52,17 @@ static NSArray<NSString *> *RootHideCandidatePaths(NSString *relativePath)
     return paths.array;
 }
 
-static NSString *RootHideCachedInjectionMode(void)
+// Apply ownership to the staged file before publishing it.
+static BOOL RHSaveDictionary(NSDictionary *value, NSString *path, NSDictionary *attributes)
 {
-    NSString *cachedMode = [[NSUserDefaults standardUserDefaults] stringForKey:RHInjectModeDefaultsKey];
-    return RootHideNormalizeInjectionMode(cachedMode);
-}
-
-static void RootHideSetCachedInjectionMode(NSString *mode)
-{
-    NSString *normalizedMode = RootHideNormalizeInjectionMode(mode);
-    if (normalizedMode.length > 0) {
-        [[NSUserDefaults standardUserDefaults] setObject:normalizedMode forKey:RHInjectModeDefaultsKey];
-    }
-    else {
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey:RHInjectModeDefaultsKey];
-    }
-}
-
-static BOOL RootHideAnyCandidatePathExists(NSString *relativePath)
-{
-    for (NSString *candidatePath in RootHideCandidatePaths(relativePath)) {
-        if ([[NSFileManager defaultManager] fileExistsAtPath:candidatePath]) {
-            return YES;
-        }
-    }
+    if (!path.length || !value) return NO;
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *directory = path.stringByDeletingLastPathComponent;
+    NSString *stage = [directory stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    if (![value writeToFile:stage atomically:YES]) return NO;
+    if ([files setAttributes:attributes ofItemAtPath:stage error:nil] &&
+        rename(stage.fileSystemRepresentation, path.fileSystemRepresentation) == 0) return YES;
+    [files removeItemAtPath:stage error:nil];
     return NO;
 }
 
@@ -120,68 +112,23 @@ static BOOL RootHideAnyCandidatePathExists(NSString *relativePath)
     return [defaults objectForKey:key];
 }
 
-+ (void)setDefaults:(NSObject*)value forKey:(NSString*)key {
++ (BOOL)setDefaults:(NSObject*)value forKey:(NSString*)key {
     NSString *configFilePath = jbroot(@"/var/mobile/Library/RootHide/RootHideConfig.plist");
     NSMutableDictionary* defaults = [NSMutableDictionary dictionaryWithContentsOfFile:configFilePath];
+    if (!defaults && [NSFileManager.defaultManager fileExistsAtPath:configFilePath]) {
+        [self showMessage:Localized(@"Could not read settings.") title:Localized(@"Error")];
+        return NO;
+    }
     if(!defaults) defaults = [[NSMutableDictionary alloc] init];
     [defaults setValue:value forKey:key];
-    [defaults writeToFile:configFilePath atomically:YES];
+    return [self writeRootHideDictionary:defaults toRelativePath:@"/var/mobile/Library/RootHide/RootHideConfig.plist"];
 }
 
 + (NSString *)rootHideInjectionMode
 {
-    NSDictionary *modeConfiguration = [self rootHideDictionaryForRelativePath:RHRootHideModeRelativePath createIfNeeded:NO defaults:nil];
-    NSString *configuredMode = RootHideNormalizeInjectionMode(modeConfiguration[@"mode"]);
-    if (configuredMode) {
-        RootHideSetCachedInjectionMode(configuredMode);
-        return configuredMode;
-    }
-
-    BOOL hasBlacklistRules = RootHideAnyCandidatePathExists(RHRootHideUninjectRelativePath);
-    BOOL hasWhitelistRules = RootHideAnyCandidatePathExists(RHRootHideInjectRelativePath);
-    BOOL hasHiddenWhitelistTweaks = RootHideAnyCandidatePathExists(RHRootHideHiddenWhitelistTweaksRelativePath);
-    NSString *cachedMode = RootHideCachedInjectionMode();
-
-    if ([cachedMode isEqualToString:@"blacklistallowlist"] && hasBlacklistRules && hasWhitelistRules && hasHiddenWhitelistTweaks) {
-        return cachedMode;
-    }
-    if ([cachedMode isEqualToString:@"hiddenwhitelist"] && hasBlacklistRules && hasWhitelistRules && hasHiddenWhitelistTweaks) {
-        return cachedMode;
-    }
-    if ([cachedMode isEqualToString:@"whitelist"] && hasWhitelistRules && !hasBlacklistRules) {
-        return cachedMode;
-    }
-    if ([cachedMode isEqualToString:@"blacklist"] && hasBlacklistRules) {
-        return cachedMode;
-    }
-
-    if (hasBlacklistRules && hasWhitelistRules && hasHiddenWhitelistTweaks) {
-        return @"hiddenwhitelist";
-    }
-    if (hasBlacklistRules) {
-        return @"blacklist";
-    }
-    if (hasWhitelistRules) {
-        return @"whitelist";
-    }
-
-    return @"stock";
-}
-
-+ (void)ensureRootHideDirectoryExists
-{
-    NSDictionary *directoryAttributes = @{
-        NSFilePosixPermissions : @(0755),
-        NSFileOwnerAccountID : @(501),
-        NSFileGroupOwnerAccountID : @(501),
-    };
-
-    for (NSString *rootHidePath in RootHideCandidatePaths(RHRootHideDirectoryRelativePath)) {
-        if (![[NSFileManager defaultManager] fileExistsAtPath:rootHidePath]) {
-            [[NSFileManager defaultManager] createDirectoryAtPath:rootHidePath withIntermediateDirectories:YES attributes:directoryAttributes error:nil];
-        }
-        [[NSFileManager defaultManager] setAttributes:directoryAttributes ofItemAtPath:rootHidePath error:nil];
-    }
+    NSString *path = jbroot(RHRootHideModeRelativePath);
+    NSDictionary *saved = path.length ? [NSDictionary dictionaryWithContentsOfFile:path] : nil;
+    return RootHideNormalizeInjectionMode(saved[@"mode"]) ?: @"stock";
 }
 
 + (NSString *)rootHidePathForRelativePath:(NSString *)relativePath
@@ -192,7 +139,7 @@ static BOOL RootHideAnyCandidatePathExists(NSString *relativePath)
         }
     }
     NSString *preferredPath = RootHideCandidatePaths(relativePath).firstObject;
-    return preferredPath.length > 0 ? preferredPath : relativePath;
+    return preferredPath;
 }
 
 + (NSMutableDictionary *)rootHideDictionaryForRelativePath:(NSString *)relativePath
@@ -225,35 +172,28 @@ static BOOL RootHideAnyCandidatePathExists(NSString *relativePath)
     }
 
     if (createIfNeeded && (![[NSFileManager defaultManager] fileExistsAtPath:resolvedPath] || changed)) {
-        [self writeRootHideDictionary:dictionary toRelativePath:relativePath];
+        if (![self writeRootHideDictionary:dictionary toRelativePath:relativePath]) return nil;
     }
 
     return dictionary;
 }
 
-+ (void)writeRootHideDictionary:(NSDictionary *)dictionary toRelativePath:(NSString *)relativePath
++ (BOOL)writeRootHideDictionary:(NSDictionary *)dictionary toRelativePath:(NSString *)relativePath
 {
-    [self ensureRootHideDirectoryExists];
-
-    NSDictionary *fileAttributes = @{
-        NSFilePosixPermissions : @(0644),
-        NSFileOwnerAccountID : @(501),
-        NSFileGroupOwnerAccountID : @(501),
-    };
-
-    NSDictionary *safeDictionary = dictionary ?: @{};
-    for (NSString *resolvedPath in RootHideCandidatePaths(relativePath)) {
-        [safeDictionary writeToFile:resolvedPath atomically:YES];
-        [[NSFileManager defaultManager] setAttributes:fileAttributes ofItemAtPath:resolvedPath error:nil];
+    NSString *path = [self rootHidePathForRelativePath:relativePath];
+    NSDictionary *attributes = @{NSFilePosixPermissions:@0644, NSFileOwnerAccountID:@501, NSFileGroupOwnerAccountID:@501};
+    if (!RHSaveDictionary(dictionary, path, attributes)) {
+        [self showMessage:Localized(@"Could not save settings.") title:Localized(@"Error")];
+        return NO;
     }
+    return YES;
 }
 
-+ (void)setRootHideInjectionMode:(NSString *)mode
++ (BOOL)setRootHideInjectionMode:(NSString *)mode
 {
-    NSString *normalizedMode = RootHideNormalizeInjectionMode(mode) ?: @"stock";
-    RootHideSetCachedInjectionMode(normalizedMode);
-    [self writeRootHideDictionary:@{ @"mode" : normalizedMode } toRelativePath:RHRootHideModeRelativePath];
-    [self ensureInjectionModeSupportFiles];
+    NSString *normalizedMode = RootHideNormalizeInjectionMode(mode);
+    if (!normalizedMode || ![self ensureSupportFilesForMode:normalizedMode]) return NO;
+    return [self writeRootHideDictionary:@{@"mode":normalizedMode} toRelativePath:RHRootHideModeRelativePath];
 }
 
 + (NSString *)activeInjectionRulesRelativePath
@@ -324,22 +264,22 @@ static BOOL RootHideAnyCandidatePathExists(NSString *relativePath)
     return defaultJetsamAddend;
 }
 
-+ (void)ensureInjectionModeSupportFiles
++ (BOOL)ensureSupportFilesForMode:(NSString *)mode
 {
-    NSString *mode = self.rootHideInjectionMode;
-    [self rootHideDictionaryForRelativePath:RHRootHideJetsamAddendRelativePath createIfNeeded:YES defaults:[self defaultJetsamAddend]];
+    if (![self rootHideDictionaryForRelativePath:RHRootHideJetsamAddendRelativePath createIfNeeded:YES defaults:[self defaultJetsamAddend]]) return NO;
     if ([mode isEqualToString:@"whitelist"] || [mode isEqualToString:@"hiddenwhitelist"] || [mode isEqualToString:@"blacklistallowlist"]) {
-        [self rootHideDictionaryForRelativePath:RHRootHideInjectRelativePath createIfNeeded:YES defaults:@{}];
-        [self rootHideDictionaryForRelativePath:RHRootHideInjectSystemRelativePath createIfNeeded:YES defaults:[self defaultSystemInjection]];
-        [self rootHideDictionaryForRelativePath:RHRootHideInjectWantsBlacklistRelativePath createIfNeeded:YES defaults:[self defaultWantsBlacklist]];
+        if (![self rootHideDictionaryForRelativePath:RHRootHideInjectRelativePath createIfNeeded:YES defaults:@{}]) return NO;
+        if (![self rootHideDictionaryForRelativePath:RHRootHideInjectSystemRelativePath createIfNeeded:YES defaults:[self defaultSystemInjection]]) return NO;
+        if (![self rootHideDictionaryForRelativePath:RHRootHideInjectWantsBlacklistRelativePath createIfNeeded:YES defaults:[self defaultWantsBlacklist]]) return NO;
         if ([mode isEqualToString:@"hiddenwhitelist"] || [mode isEqualToString:@"blacklistallowlist"]) {
-            [self rootHideDictionaryForRelativePath:RHRootHideUninjectRelativePath createIfNeeded:YES defaults:@{}];
-            [self rootHideDictionaryForRelativePath:RHRootHideHiddenWhitelistTweaksRelativePath createIfNeeded:YES defaults:@{}];
+            if (![self rootHideDictionaryForRelativePath:RHRootHideUninjectRelativePath createIfNeeded:YES defaults:@{}]) return NO;
+            if (![self rootHideDictionaryForRelativePath:RHRootHideHiddenWhitelistTweaksRelativePath createIfNeeded:YES defaults:@{}]) return NO;
         }
     }
     else if ([mode isEqualToString:@"blacklist"]) {
-        [self rootHideDictionaryForRelativePath:RHRootHideUninjectRelativePath createIfNeeded:YES defaults:@{}];
+        if (![self rootHideDictionaryForRelativePath:RHRootHideUninjectRelativePath createIfNeeded:YES defaults:@{}]) return NO;
     }
+    return YES;
 }
 
 + (void)rebootUserspace
@@ -446,9 +386,11 @@ static BOOL RootHideAnyCandidatePathExists(NSString *relativePath)
     NSString* roothideDir = jbroot(@"/var/mobile/Library/RootHide");
     if(![NSFileManager.defaultManager fileExistsAtPath:roothideDir]) {
         NSDictionary* attr = @{NSFilePosixPermissions:@(0755), NSFileOwnerAccountID:@(501), NSFileGroupOwnerAccountID:@(501)};
-        assert([NSFileManager.defaultManager createDirectoryAtPath:roothideDir withIntermediateDirectories:YES attributes:attr error:nil]);
+        if (![NSFileManager.defaultManager createDirectoryAtPath:roothideDir withIntermediateDirectories:YES attributes:attr error:nil]) {
+            [AppDelegate showMessage:Localized(@"Could not create settings directory.") title:Localized(@"Error")];
+        }
     }
-    [AppDelegate ensureInjectionModeSupportFiles];
+    [AppDelegate ensureSupportFilesForMode:AppDelegate.rootHideInjectionMode];
     
     NSString* jsonPath = [NSBundle.mainBundle pathForResource:@"varCleanRules" ofType:@"json"];
     NSLog(@"jsonPath=%@", jsonPath);

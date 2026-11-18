@@ -384,7 +384,10 @@ BOOL isDefaultInstallationPath(NSString* path)
     NSMutableDictionary* appconfig = [AppDelegate getDefaultsForKey:@"appconfig"];
     if(!appconfig) appconfig = [[NSMutableDictionary alloc] init];
     [appconfig setObject:@(switchInCell.on) forKey:app.bundleIdentifier];
-    [AppDelegate setDefaults:appconfig forKey:@"appconfig"];
+    if (![AppDelegate setDefaults:appconfig forKey:@"appconfig"]) {
+        switchInCell.on = !switchInCell.on;
+        return;
+    }
     
     void killAllForBundle(const char* bundlePath);
     killAllForBundle(app.bundleURL.path.UTF8String);

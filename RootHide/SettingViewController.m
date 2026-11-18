@@ -472,7 +472,7 @@ static NSString *RHDisplayNameForInfoDictionary(NSDictionary *infoDictionary, NS
     NSDictionary *item = self.modeItems[indexPath.row];
     NSString *selectedMode = item[@"mode"];
     if (![[AppDelegate rootHideInjectionMode] isEqualToString:selectedMode]) {
-        [AppDelegate setRootHideInjectionMode:selectedMode];
+        if (![AppDelegate setRootHideInjectionMode:selectedMode]) { [tableView reloadData]; return; }
         [[NSNotificationCenter defaultCenter] postNotificationName:RHInjectSettingsChangedNotification object:nil];
         [tableView reloadData];
         [self presentUserspaceRebootPrompt];
@@ -563,7 +563,7 @@ static NSString *RHDisplayNameForInfoDictionary(NSDictionary *infoDictionary, NS
 {
     NSString *key = self.sortedKeys[toggle.tag];
     self.dictionary[key] = @(toggle.on);
-    [AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath];
+    if (![AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath]) return;
     [[NSNotificationCenter defaultCenter] postNotificationName:RHInjectSettingsChangedNotification object:nil];
     [self.tableView reloadData];
 }
@@ -586,7 +586,7 @@ static NSString *RHDisplayNameForInfoDictionary(NSDictionary *infoDictionary, NS
             return;
         }
         self.dictionary[key] = @YES;
-        [AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath];
+        if (![AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath]) return;
         [[NSNotificationCenter defaultCenter] postNotificationName:RHInjectSettingsChangedNotification object:nil];
         [self reloadData];
         [self.tableView reloadData];
@@ -609,7 +609,7 @@ static NSString *RHDisplayNameForInfoDictionary(NSDictionary *infoDictionary, NS
 
     NSString *key = self.sortedKeys[indexPath.row];
     [self.dictionary removeObjectForKey:key];
-    [AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath];
+    if (![AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath]) return;
     [[NSNotificationCenter defaultCenter] postNotificationName:RHInjectSettingsChangedNotification object:nil];
     [self reloadData];
     [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
@@ -791,7 +791,7 @@ static NSString *RHDisplayNameForInfoDictionary(NSDictionary *infoDictionary, NS
     }
 
     self.dictionary[key] = @(value);
-    [AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath];
+    if (![AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath]) return;
     [[NSNotificationCenter defaultCenter] postNotificationName:RHInjectSettingsChangedNotification object:nil];
     [self reloadData];
     [self.tableView reloadData];
@@ -868,7 +868,7 @@ static NSString *RHDisplayNameForInfoDictionary(NSDictionary *infoDictionary, NS
 
     NSString *key = self.sortedKeys[indexPath.row];
     [self.dictionary removeObjectForKey:key];
-    [AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath];
+    if (![AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath]) return;
     [[NSNotificationCenter defaultCenter] postNotificationName:RHInjectSettingsChangedNotification object:nil];
     [self reloadData];
     [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
@@ -1616,7 +1616,7 @@ static NSString *RHDisplayNameForInfoDictionary(NSDictionary *infoDictionary, NS
     }
 
     rules[appKey] = @(toggle.on);
-    [AppDelegate writeRootHideDictionary:rules toRelativePath:self.rulesRelativePath];
+    if (![AppDelegate writeRootHideDictionary:rules toRelativePath:self.rulesRelativePath]) return;
 
     // When disabling an app in whitelist mode, also remove any stale
     // hidden whitelist tweak selections so launchdhook doesn't mistakenly
@@ -1636,7 +1636,7 @@ static NSString *RHDisplayNameForInfoDictionary(NSDictionary *infoDictionary, NS
                 changed = YES;
             }
             if (changed) {
-                [AppDelegate writeRootHideDictionary:hiddenTweakSettings toRelativePath:RHRootHideHiddenWhitelistTweaksRelativePath];
+                if (![AppDelegate writeRootHideDictionary:hiddenTweakSettings toRelativePath:RHRootHideHiddenWhitelistTweaksRelativePath]) return;
             }
         }
     }
@@ -1802,7 +1802,7 @@ static NSString *RHDisplayNameForInfoDictionary(NSDictionary *infoDictionary, NS
         };
     }
 
-    [AppDelegate writeRootHideDictionary:self.allSettings toRelativePath:RHRootHideHiddenWhitelistTweaksRelativePath];
+    if (![AppDelegate writeRootHideDictionary:self.allSettings toRelativePath:RHRootHideHiddenWhitelistTweaksRelativePath]) return;
     [[NSNotificationCenter defaultCenter] postNotificationName:RHInjectSettingsChangedNotification object:nil];
 
     if (self.app.bundleURL.path.length > 0) {
@@ -2524,7 +2524,7 @@ static NSString *RHPlistValueDescription(id value)
         self.parentPlistVC.dictionary[self.parentKey] = [self.dictionary copy];
         [self.parentPlistVC persistChanges];
     } else {
-        [AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath];
+        if (![AppDelegate writeRootHideDictionary:self.dictionary toRelativePath:self.relativePath]) return;
         [[NSNotificationCenter defaultCenter] postNotificationName:RHInjectSettingsChangedNotification object:nil];
     }
 }
@@ -2726,7 +2726,11 @@ static NSString *RHPlistValueDescription(id value)
     if (toggle.tag >= (NSInteger)self.sortedKeys.count) return;
     NSString *key = self.sortedKeys[toggle.tag];
     self.appconfig[key] = @(toggle.on);
-    [AppDelegate setDefaults:self.appconfig forKey:@"appconfig"];
+    if (![AppDelegate setDefaults:self.appconfig forKey:@"appconfig"]) {
+        toggle.on = !toggle.on;
+        self.appconfig[key] = @(toggle.on);
+        return;
+    }
     [[NSNotificationCenter defaultCenter] postNotificationName:RHInjectSettingsChangedNotification object:nil];
 }
 
