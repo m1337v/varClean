@@ -112,6 +112,60 @@ NSArray* GetDirectoryContents(NSString* path)
     return result;
 }
 
+- (BOOL)validateRules:(NSDictionary*)rules
+{
+    if(![rules isKindOfClass:NSDictionary.class])
+        return NO;
+
+    for (NSString* path in rules)
+    {
+        if(![path isKindOfClass:NSString.class])
+            return NO;
+
+        NSDictionary* rule = rules[path];
+        if(![rule isKindOfClass:NSDictionary.class])
+            return NO;
+
+        NSString* defaultMode = rule[@"default"];
+        if(defaultMode && ![@[@"whitelist", @"blacklist"] containsObject:defaultMode])
+            return NO;
+
+        for (NSString* key in @[@"whitelist", @"blacklist", @"removedWhitelist", @"removedBlacklist"])
+        {
+            NSArray* list = rule[key];
+            if(!list) continue;
+
+            if(![list isKindOfClass:NSArray.class])
+                return NO;
+
+            for (id item in list)
+            {
+                if([item isKindOfClass:NSString.class])
+                    continue;
+
+                if(![item isKindOfClass:NSDictionary.class])
+                    return NO;
+
+                NSString* name = item[@"name"];
+                NSString* match = item[@"match"];
+
+                if(![name isKindOfClass:NSString.class] || ![match isKindOfClass:NSString.class])
+                    return NO;
+
+                if([match isEqualToString:@"include"])
+                    continue;
+
+                if(![match isEqualToString:@"regexp"])
+                    return NO;
+
+                if(![NSRegularExpression regularExpressionWithPattern:name options:0 error:nil])
+                    return NO;
+            }
+        }
+    }
+    return YES;
+}
+
 - (void)updateForRules:(NSDictionary*)rules customed:(NSMutableDictionary*)customedRules newData:(NSMutableArray*)newData keepState:(BOOL)keepState {
     for (NSString* path in rules) {
         NSMutableArray *folders = [[NSMutableArray alloc] init];
@@ -271,6 +325,11 @@ NSArray* GetDirectoryContents(NSString* path)
     NSString *customedRulesFilePath = jbroot(@"/var/mobile/Library/RootHide/varCleanRules-custom.plist");
     NSMutableDictionary *customedRules = [NSMutableDictionary dictionaryWithContentsOfFile:customedRulesFilePath];
     
+    if (![self validateRules:rules] ||
+        ([[NSFileManager defaultManager] fileExistsAtPath:customedRulesFilePath] && ![self validateRules:customedRules])) {
+        NSLog(@"Cannot scan with invalid cleanup rules");
+        return newData;
+    }
     [self updateForRules:rules customed:customedRules newData:newData keepState:keepState];
     //continue processing the remaining paths that are not in the built-in list
     [self updateForRules:customedRules customed:nil newData:newData keepState:keepState];
